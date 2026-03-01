@@ -1,0 +1,6 @@
+colabfold_params/
+cache/
+__pycache__/
+output/
+input/
+.DS_Store
