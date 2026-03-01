@@ -217,7 +217,11 @@ def run_etflow_and_save_pdbs(records: List[Tuple[int, str, str]], output_dir: st
         print(f"Processing position={position}, code={mod_code}...")
 
         # ETFlow output dictionary should contain an entry keyed by original SMILES.
-        if smiles not in results or not results[smiles]:
+        # if smiles not in results or not results[smiles]:
+        # 
+        # 
+        # 
+        if smiles not in results or len(results[smiles]) == 0:
             print(f"  -> Warning: No ETFlow output for {mod_code} ({smiles}). Skipping.")
             continue
 
