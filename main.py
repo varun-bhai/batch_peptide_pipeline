@@ -113,6 +113,11 @@ def main() -> None:
         required=True,
         help="Path to modifications JSON dictionary",
     )
+    parser.add_argument(
+        "--job_name",
+        default="single_peptide",
+        help='Output folder name for --sequence mode (default: "single_peptide")',
+    )
 
     args = parser.parse_args()
 
@@ -134,7 +139,7 @@ def main() -> None:
             raise FileNotFoundError(f"Required script not found: {script_path}")
 
     if args.sequence is not None:
-        records = [("single_peptide", args.sequence)]
+        records = [(args.job_name, args.sequence)]
         print_banner("Loaded 1 sequence from command line input")
     else:
         fasta_in = os.path.abspath(args.fasta_in)
