@@ -2,13 +2,14 @@
 """
 01_parse_input.py
 
-Minimal parser for peptide sequences containing canonical residues and
-three-letter-code modifications in parentheses, e.g. APG(5PG)APG.
+Adapter parser for peptide sequences containing:
+- Legacy modification blocks in parentheses, e.g. APG(5PG)APG
+- MAP-style blocks in curly braces, e.g. MKT{ptm:DiMe1}A
 
-Outputs (created under input/):
-1) FASTA with fully translated canonical amino acid sequence.
+Outputs remain unchanged:
+1) FASTA with the translated canonical amino acid sequence.
 2) TXT with one modification per line in this exact format:
-   position : modification_code : SMILES
+   position : code : SMILES
 """
 
 import argparse
@@ -18,7 +19,7 @@ from typing import Dict, List, Tuple
 
 
 def load_modification_index(json_path: str) -> Dict[str, dict]:
-    """Load JSON and index entries by 'Three letter code' for fast lookups."""
+    """Load JSON and index entries by both 'Three letter code' and 'User Code'."""
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -29,10 +30,39 @@ def load_modification_index(json_path: str) -> Dict[str, dict]:
     for entry in data:
         if not isinstance(entry, dict):
             continue
-        code = str(entry.get("Three letter code", "")).strip()
-        if code:
-            index[code] = entry
+        three_letter_code = str(entry.get("Three letter code", "")).strip()
+        user_code = str(entry.get("User Code", "")).strip()
+
+        if three_letter_code:
+            index[three_letter_code] = entry
+        if user_code:
+            index[user_code] = entry
     return index
+
+
+def get_modification_record(mod_code: str, mod_index: Dict[str, dict]) -> dict:
+    """Fetch one modification record by either three-letter code or user code."""
+    if mod_code not in mod_index:
+        raise ValueError(f"Modification code '{mod_code}' not found in JSON.")
+    return mod_index[mod_code]
+
+
+def get_three_letter_code(record: dict, input_code: str) -> str:
+    """Extract the official PDB three-letter code for downstream logging."""
+    three_letter_code = str(record.get("Three letter code", "")).strip()
+    if not three_letter_code:
+        raise ValueError(
+            f"Missing 'Three letter code' in JSON record for modification '{input_code}'."
+        )
+    return three_letter_code
+
+
+def get_smiles(record: dict, mod_code: str) -> str:
+    """Extract SMILES from one JSON record."""
+    smiles = str(record.get("SMILES", "")).strip()
+    if not smiles:
+        raise ValueError(f"Missing SMILES for modification code '{mod_code}'.")
+    return smiles
 
 
 def extract_parent_one_letter(natural_aa_field: str) -> str:
@@ -57,15 +87,21 @@ def parse_sequence(
 
     Rules:
     - Alphabetic characters are treated as canonical residues.
-    - Parenthesized text '(XXX)' is treated as a 3-letter modification code.
-      It is mapped to parent 1-letter code via JSON and inserted into CAA sequence.
+    - Parenthesized text '(XXX)' is legacy format and behaves like a standalone
+      non-natural residue: map to the parent canonical residue and insert it.
+    - Curly-brace MAP tags support:
+      * {ptm:Code}: modify the immediately preceding residue
+      * {nnr:Code}: standalone residue, insert parent canonical residue
+      * {nt:Code}: N-terminal modification, log at position 1
+      * {ct:Code}: C-terminal modification, log at final canonical position
+      * {Code}: fallback shorthand, treated like standalone non-natural residue
 
     Returns:
     - canonical sequence string
     - list of tuples: (position, modification_code, smiles)
     """
     caa_chars: List[str] = []
-    modifications: List[Tuple[int, str, str]] = []
+    modification_specs: List[Tuple[object, str, str]] = []
 
     residue_position = 1  # 1-based position in final translated sequence
     i = 0
@@ -81,7 +117,8 @@ def parse_sequence(
             i += 1
             continue
 
-        # Modification case: text inside parentheses.
+        # Legacy modification case: text inside parentheses behaves like a
+        # standalone modified residue, so we insert the parent canonical letter.
         if ch == "(":
             end_idx = sequence.find(")", i + 1)
             if end_idx == -1:
@@ -91,32 +128,107 @@ def parse_sequence(
             if not mod_code:
                 raise ValueError(f"Empty modification code at index {i}.")
 
-            if mod_code not in mod_index:
-                raise ValueError(f"Modification code '{mod_code}' not found in JSON.")
-
-            record = mod_index[mod_code]
+            record = get_modification_record(mod_code, mod_index)
+            official_code = get_three_letter_code(record, mod_code)
             parent_one_letter = extract_parent_one_letter(record.get("Natural Amino Acid", ""))
-            smiles = str(record.get("SMILES", "")).strip()
-            if not smiles:
-                raise ValueError(f"Missing SMILES for modification code '{mod_code}'.")
+            smiles = get_smiles(record, mod_code)
 
             # Insert mapped parent residue into canonical sequence.
             caa_chars.append(parent_one_letter)
 
             # Record position for downstream side-chain generation/stitching.
-            modifications.append((residue_position, mod_code, smiles))
+            modification_specs.append((residue_position, official_code, smiles))
 
             residue_position += 1
             i = end_idx + 1
             continue
 
+        # MAP-format case: text inside curly braces.
+        if ch == "{":
+            end_idx = sequence.find("}", i + 1)
+            if end_idx == -1:
+                raise ValueError(f"Unclosed curly brace starting at index {i}.")
+
+            block_text = sequence[i + 1 : end_idx].strip()
+            if not block_text:
+                raise ValueError(f"Empty MAP block at index {i}.")
+
+            # Fallback shorthand: {CODE} behaves like a standalone modified residue.
+            if ":" not in block_text:
+                mod_code = block_text
+                record = get_modification_record(mod_code, mod_index)
+                official_code = get_three_letter_code(record, mod_code)
+                parent_one_letter = extract_parent_one_letter(record.get("Natural Amino Acid", ""))
+                smiles = get_smiles(record, mod_code)
+
+                caa_chars.append(parent_one_letter)
+                modification_specs.append((residue_position, official_code, smiles))
+
+                residue_position += 1
+                i = end_idx + 1
+                continue
+
+            prefix, mod_code = [part.strip() for part in block_text.split(":", 1)]
+            if not prefix or not mod_code:
+                raise ValueError(f"Invalid MAP block at index {i}: {block_text!r}")
+
+            prefix = prefix.lower()
+            record = get_modification_record(mod_code, mod_index)
+            official_code = get_three_letter_code(record, mod_code)
+            smiles = get_smiles(record, mod_code)
+
+            if prefix == "ptm":
+                # PTM modifies the immediately preceding canonical residue.
+                if residue_position == 1:
+                    raise ValueError(f"PTM block '{block_text}' has no preceding residue to modify.")
+                modification_specs.append((residue_position - 1, official_code, smiles))
+                i = end_idx + 1
+                continue
+
+            if prefix == "nnr":
+                # Non-natural residue is a standalone residue in the sequence.
+                parent_one_letter = extract_parent_one_letter(record.get("Natural Amino Acid", ""))
+                caa_chars.append(parent_one_letter)
+                modification_specs.append((residue_position, official_code, smiles))
+                residue_position += 1
+                i = end_idx + 1
+                continue
+
+            if prefix == "nt":
+                # N-terminal modifications are always logged at position 1.
+                modification_specs.append((1, official_code, smiles))
+                i = end_idx + 1
+                continue
+
+            if prefix == "ct":
+                # C-terminal modifications are resolved after the full canonical
+                # sequence length is known.
+                modification_specs.append(("CT", official_code, smiles))
+                i = end_idx + 1
+                continue
+
+            raise ValueError(f"Unsupported MAP prefix '{prefix}' in block '{block_text}'.")
+
         # Any other character is invalid for this minimal parser.
         raise ValueError(
             f"Unexpected character '{ch}' at index {i}. "
-            "Only letters and '(THREE_LETTER_CODE)' blocks are supported."
+            "Only letters, '(CODE)' blocks, and '{PREFIX:CODE}' blocks are supported."
         )
 
-    return "".join(caa_chars), modifications
+    caa_sequence = "".join(caa_chars)
+    final_position = len(caa_sequence)
+
+    modifications: List[Tuple[int, str, str]] = []
+    for position_spec, mod_code, smiles in modification_specs:
+        if position_spec == "CT":
+            if final_position == 0:
+                raise ValueError(f"C-terminal modification '{mod_code}' cannot be applied to an empty sequence.")
+            position = final_position
+        else:
+            position = int(position_spec)
+        modifications.append((position, mod_code, smiles))
+
+    return caa_sequence, modifications
 
 
 def write_outputs(caa_sequence: str, modifications: List[Tuple[int, str, str]], fasta_path: str, mods_path: str) -> None:
@@ -142,7 +254,7 @@ def write_outputs(caa_sequence: str, modifications: List[Tuple[int, str, str]], 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Parse peptide sequence with '(Three letter code)' modifications into CAA FASTA + modification map."
+        description="Parse peptide sequence with legacy '(CODE)' or MAP '{prefix:Code}' modifications into CAA FASTA + modification map."
     )
     parser.add_argument(
         "--sequence",
