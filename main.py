@@ -99,10 +99,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run the full modified-peptide pipeline for each sequence in a multi-FASTA file."
     )
-    parser.add_argument(
+    input_group = parser.add_mutually_exclusive_group(required=True)
+    input_group.add_argument(
         "--fasta_in",
-        required=True,
         help="Path to multi-sequence FASTA input file",
+    )
+    input_group.add_argument(
+        "--sequence",
+        help='Single raw peptide sequence string, e.g. "APG(5PG)APG"',
     )
     parser.add_argument(
         "--json",
@@ -113,7 +117,6 @@ def main() -> None:
     args = parser.parse_args()
 
     project_root = os.path.dirname(os.path.abspath(__file__))
-    fasta_in = os.path.abspath(args.fasta_in)
     json_path = os.path.abspath(args.json)
 
     if not os.path.exists(json_path):
@@ -130,8 +133,13 @@ def main() -> None:
         if not os.path.exists(script_path):
             raise FileNotFoundError(f"Required script not found: {script_path}")
 
-    records = read_multi_fasta(fasta_in)
-    print_banner(f"Loaded {len(records)} sequence(s) from {fasta_in}")
+    if args.sequence is not None:
+        records = [("single_peptide", args.sequence)]
+        print_banner("Loaded 1 sequence from command line input")
+    else:
+        fasta_in = os.path.abspath(args.fasta_in)
+        records = read_multi_fasta(fasta_in)
+        print_banner(f"Loaded {len(records)} sequence(s) from {fasta_in}")
 
     successes = 0
     failures = 0
