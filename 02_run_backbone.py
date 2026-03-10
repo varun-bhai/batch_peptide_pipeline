@@ -173,7 +173,7 @@ def predict_structure(
             ) from exc
 
         setup_colabfold_params()
-        queries = [(jobname, sequence, None)]
+        queries = [(jobname, sequence, None, None)]
 
         try:
             print("\nRunning alphafold2 with MSA mode...")
