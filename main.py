@@ -242,6 +242,28 @@ def main() -> None:
             )
 
             # Step 5: Minimize final structure.
+        #     run_step(
+        #         f"{job_name} | Step 5/5: Minimization",
+        #         [
+        #             "python",
+        #             step5_script,
+        #             "--input",
+        #             stitched_pdb,
+        #             "--out",
+        #             minimized_pdb,
+        #         ],
+        #         cwd=project_root,
+        #     )
+
+        #     successes += 1
+        #     print(f"[INFO] Completed job '{job_name}' successfully.", flush=True)
+
+        # except (subprocess.CalledProcessError, FileNotFoundError, ValueError, RuntimeError) as exc:
+        #     failures += 1
+        #     print(f"[ERROR] Job '{job_name}' failed: {exc}", flush=True)
+        #     print("[INFO] Continuing to next sequence...", flush=True)
+        #     continue
+            # Step 5: Minimize final structure.
             run_step(
                 f"{job_name} | Step 5/5: Minimization",
                 [
@@ -257,6 +279,16 @@ def main() -> None:
 
             successes += 1
             print(f"[INFO] Completed job '{job_name}' successfully.", flush=True)
+
+            # --- ADD THIS NEW BLOCK ---
+            # Immediately back up the completed folder to Google Drive
+            drive_dest = f"/content/drive/MyDrive/try_pipeline/{job_name}"
+            # Ensure the parent directory exists
+            os.makedirs("/content/drive/MyDrive/try_pipeline", exist_ok=True)
+            # Copy the folder over
+            subprocess.run(["cp", "-r", job_dir, drive_dest], check=False)
+            print(f"[INFO] Safely backed up '{job_name}' to Google Drive.", flush=True)
+            # --------------------------
 
         except (subprocess.CalledProcessError, FileNotFoundError, ValueError, RuntimeError) as exc:
             failures += 1
