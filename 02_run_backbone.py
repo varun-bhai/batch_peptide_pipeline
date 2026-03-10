@@ -103,7 +103,7 @@ def predict_structure(
     sequence: str,
     out_dir: str,
     jobname: str = "test_pred",
-    method: str = "esmfold",
+    method: str = "alphafold2",
     retries: int = 3,
     delay: int = 5,
 ) -> str:
@@ -114,7 +114,7 @@ def predict_structure(
     - sequence: canonical amino acid sequence string.
     - out_dir: directory where intermediate/final outputs are stored.
     - jobname: base name for output PDB.
-    - method: 'esmfold' (default) or 'alphafold2'.
+    - method: 'alphafold2' (default) or 'esmfold'.
     - retries/delay: ESMFold API retry behavior.
 
     Returns:
