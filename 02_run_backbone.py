@@ -217,17 +217,31 @@ def predict_structure(
         raise RuntimeError("alphafold2 did not produce a PDB file.")
 
     # Method control flow: ESMFold first with fallback, or direct alphafold2.
-    method = method.lower().strip()
-    if method == "esmfold":
-        try:
-            return run_esmfold()
-        except Exception as exc:
-            print("\n[WARNING] ESMFold prediction failed! Error:", exc)
-            print("\n→ Falling back to alphafold2...")
-            return run_alphafold2()
+    # method = method.lower().strip()
+    # if method == "esmfold":
+    #     try:
+    #         return run_esmfold()
+    #     except Exception as exc:
+    #         print("\n[WARNING] ESMFold prediction failed! Error:", exc)
+    #         print("\n→ Falling back to alphafold2...")
+    #         return run_alphafold2()
 
+    # if method == "alphafold2":
+    #     return run_alphafold2()
+
+    # raise ValueError("Invalid method. Choose either 'esmfold' or 'alphafold2'.")
+    # Method control flow: alphafold2 first with fallback, or direct esmfold.
+    method = method.lower().strip()
     if method == "alphafold2":
-        return run_alphafold2()
+        try:
+            return run_alphafold2()
+        except Exception as exc:
+            print("\n[WARNING] AlphaFold2 prediction failed! Error:", exc)
+            print("\n→ Falling back to ESMFold...")
+            return run_esmfold()
+
+    if method == "esmfold":
+        return run_esmfold()
 
     raise ValueError("Invalid method. Choose either 'esmfold' or 'alphafold2'.")
 
