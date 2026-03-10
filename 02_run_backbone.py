@@ -244,9 +244,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--method",
-        default="esmfold",
+        default="alphafold2",
         choices=["esmfold", "alphafold2"],
-        help="Prediction method (default: esmfold)",
+        help="Prediction method (default: alphafold2)",
     )
     parser.add_argument(
         "--out_pdb",
